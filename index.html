@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Reaprender - Crecimiento Orgánico del Conocimiento</title>
+    <!-- Librerías para exportación -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -29,7 +33,7 @@
             height: 100%;
             overflow: hidden;
             position: relative;
-            touch-action: none;
+            touch-action: manipulation;   /* ✅ Permite zoom por pellizco en móviles */
             cursor: grab;
             background: #000;
         }
@@ -210,7 +214,7 @@
             margin-left: 4px;
             box-shadow: 0 0 4px #00e5ff;
         }
-        /* Panel de notas flotante (redimensionable y movible) */
+        /* Panel de notas flotante */
         .note-panel {
             position: absolute;
             top: 20%;
@@ -310,6 +314,8 @@
             display: flex;
             justify-content: center;
             gap: 20px;
+            flex-wrap: wrap;
+            padding: 0 10px;
         }
         .nav-buttons button {
             background: rgba(0,0,0,0.7);
@@ -374,11 +380,13 @@
     <div class="nav-buttons">
         <button id="prevSlideBtn">◀ Anterior</button>
         <button id="nextSlideBtn">Siguiente ▶</button>
+        <button id="downloadPPTBtn">📊 Descargar PPTX</button>
+        <button id="downloadPDFBtn">📄 Descargar PDF</button>
     </div>
     <button class="open-map-btn" id="openMapBtn">📊 Ver mapa de crecimiento</button>
 </div>
 
-<!-- Panel flotante de notas (redimensionable y movible) -->
+<!-- Panel flotante de notas -->
 <div id="notePanel" class="note-panel">
     <div class="note-panel-header" id="notePanelHeader">
         <span>✏️ Editar nota (Markdown)</span>
@@ -455,7 +463,7 @@
     document.getElementById('prevSlideBtn').addEventListener('click', prevSlide);
     
     // --------------------------------------------------------------
-    // TEXTO ORIGINAL COMPLETO (15 temas, incluidos todos los subtemas)
+    // TEXTO ORIGINAL COMPLETO (sin cambios)
     // --------------------------------------------------------------
     const textoOriginal = `# ESTRUCTURA Y OPERACIÓN DE UN SISTEMA OPERATIVO MODERNO
 
@@ -758,7 +766,7 @@
 El sistema operativo es una pieza de software de enorme complejidad y constante evolución. Sus componentes no operan de forma aislada, sino como un ecosistema altamente coordinado cuyo objetivo final es ofrecer una plataforma estable, segura y eficiente. Desde la planificación de procesos hasta la gestión de memoria virtual, y desde los controladores de dispositivos hasta la integración de inteligencia artificial, cada subsistema está meticulosamente diseñado para crear la ilusión de un sistema simple y receptivo sobre un hardware intrínsecamente complejo y paralelo. Comprender estas capas es fundamental para cualquier profesional de la informática.`;
 
     // --------------------------------------------------------------
-    // PARSEO Y RENDERIZADO DEL MAPA (con notas locales)
+    // PARSEO Y RENDERIZADO DEL MAPA
     // --------------------------------------------------------------
     function parsear(texto) {
         const lineas = texto.split(/\r?\n/);
@@ -825,9 +833,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         }
     }
     
-    // --------------------------------------------------------------
-    // PANEL FLOTANTE DE NOTAS (redimensionable y movible)
-    // --------------------------------------------------------------
+    // Panel flotante de notas
     const notePanel = document.getElementById('notePanel');
     const notePanelHeader = document.getElementById('notePanelHeader');
     const closeNotePanelBtn = document.getElementById('closeNotePanelBtn');
@@ -910,7 +916,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         noteStartHeight = notePanel.offsetHeight;
         e.preventDefault();
     });
-    // Eventos táctiles
     notePanelHeader.addEventListener('touchstart', (e) => {
         if (e.target === notePanelHeader || notePanelHeader.contains(e.target)) {
             isDraggingNote = true;
@@ -947,9 +952,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     });
     window.addEventListener('touchend', () => { isDraggingNote = false; isResizingNote = false; });
     
-    // --------------------------------------------------------------
-    // RENDERIZADO DEL MAPA
-    // --------------------------------------------------------------
+    // Renderizado del mapa
     function renderizarMapa(raices, nodosMap, hijosMap) {
         const contenedor = document.getElementById('mapaContent');
         if (!raices.length) return;
@@ -1038,9 +1041,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         document.querySelectorAll('#mapaContent .icon').forEach(i => i.textContent = '▶');
     }
     
-    // --------------------------------------------------------------
-    // MOVIMIENTO Y REDIMENSIONAMIENTO DEL PANEL PRINCIPAL
-    // --------------------------------------------------------------
+    // Movimiento y redimensionamiento del panel principal
     const mapaContainer = document.getElementById('mapaContainer');
     const mapaHeader = document.getElementById('mapaHeader');
     const resizeHandle = document.getElementById('resizeHandle');
@@ -1079,7 +1080,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         startHeight = mapaContainer.offsetHeight;
         e.preventDefault();
     });
-    // Táctil
     mapaHeader.addEventListener('touchstart', (e) => {
         if (e.target === mapaHeader || mapaHeader.contains(e.target)) {
             isMoving = true;
@@ -1116,9 +1116,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     });
     window.addEventListener('touchend', () => { isMoving = false; isResizing = false; });
     
-    // --------------------------------------------------------------
-    // CONTROL DE APERTURA/CIERRE DEL MAPA (con ESC y ocultar botón)
-    // --------------------------------------------------------------
+    // Control de apertura/cierre del mapa
     const overlay = document.getElementById('overlay');
     const openMapBtn = document.getElementById('openMapBtn');
     const cerrarMapaBtn = document.getElementById('cerrarMapaBtn');
@@ -1140,12 +1138,113 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             if (mapaContainer.style.display === 'flex') cerrarMapa();
-            // El panel de notas NO se cierra con ESC
         }
     });
     
     document.getElementById('expandirTodoMapa').addEventListener('click', expandirTodoMapa);
     document.getElementById('colapsarTodoMapa').addEventListener('click', colapsarTodoMapa);
+    
+    // --------------------------------------------------------------
+    // NUEVAS FUNCIONES: DESCARGAR PPTX Y PDF
+    // --------------------------------------------------------------
+    const downloadPPTBtn = document.getElementById('downloadPPTBtn');
+    const downloadPDFBtn = document.getElementById('downloadPDFBtn');
+    
+    async function capturarImagenActual() {
+        const elemento = document.querySelector('.image-viewer');
+        if (!elemento) {
+            alert('No se pudo encontrar la diapositiva para exportar.');
+            return null;
+        }
+        try {
+            const canvas = await html2canvas(elemento, {
+                scale: 2,               // Alta calidad
+                backgroundColor: '#000000',
+                useCORS: true,
+                logging: false
+            });
+            return canvas.toDataURL('image/png');
+        } catch (error) {
+            console.error('Error al capturar:', error);
+            alert('Error al capturar la imagen. Revisa la consola.');
+            return null;
+        }
+    }
+    
+    // Descargar PowerPoint
+    downloadPPTBtn.addEventListener('click', async () => {
+        const btn = downloadPPTBtn;
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Generando PPTX...';
+        btn.disabled = true;
+        
+        const imgData = await capturarImagenActual();
+        if (!imgData) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            return;
+        }
+        
+        try {
+            const PptxGenJS = window.PptxGenJS;
+            const pptx = new PptxGenJS();
+            const slide = pptx.addSlide();
+            const slideWidth = pptx.layout.WIDTH;
+            const slideHeight = pptx.layout.HEIGHT;
+            slide.addImage({
+                data: imgData,
+                x: 0,
+                y: 0,
+                w: slideWidth,
+                h: slideHeight
+            });
+            await pptx.writeFile({ fileName: `diapositiva_${currentSlide}.pptx` });
+        } catch (err) {
+            console.error(err);
+            alert('Error al generar PowerPoint.');
+        } finally {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    });
+    
+    // Descargar PDF (con orientación automática)
+    downloadPDFBtn.addEventListener('click', async () => {
+        const btn = downloadPDFBtn;
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Generando PDF...';
+        btn.disabled = true;
+        
+        const imgData = await capturarImagenActual();
+        if (!imgData) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            return;
+        }
+        
+        try {
+            const img = new Image();
+            img.src = imgData;
+            await new Promise((resolve) => { img.onload = resolve; });
+            
+            const { jsPDF } = window.jspdf;
+            const orientation = img.width > img.height ? 'landscape' : 'portrait';
+            // Usamos unidades 'px' con el tamaño exacto de la imagen
+            const pdf = new jsPDF({
+                orientation: orientation,
+                unit: 'px',
+                format: [img.width, img.height]
+            });
+            pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height, undefined, 'FAST');
+            pdf.save(`diapositiva_${currentSlide}.pdf`);
+        } catch (err) {
+            console.error(err);
+            alert('Error al generar PDF.');
+        } finally {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    });
     
     // --------------------------------------------------------------
     // INICIALIZACIÓN
