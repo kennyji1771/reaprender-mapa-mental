@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <!-- user-scalable=no evita el zoom nativo del navegador, nosotros manejamos el zoom manual -->
     <title>Reaprender - Crecimiento Orgánico del Conocimiento</title>
-    <!-- Librerías para exportación -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -34,11 +32,8 @@
             height: 100%;
             overflow: hidden;
             position: relative;
-            cursor: grab;
             background: #000;
-            touch-action: none;  /* Controlamos todo táctil manualmente (arrastre y zoom) */
         }
-        .image-viewer.dragging { cursor: grabbing; }
         .image-viewer img {
             display: block;
             max-width: none;
@@ -382,8 +377,8 @@
     <div class="nav-buttons">
         <button id="prevSlideBtn">◀ Anterior</button>
         <button id="nextSlideBtn">Siguiente ▶</button>
-        <button id="downloadPPTBtn">📊 Descargar PPTX</button>
-        <button id="downloadPDFBtn">📄 Descargar PDF</button>
+        <button id="downloadAllPPTBtn">📊 Exportar TODO a PPTX</button>
+        <button id="downloadAllPDFBtn">📄 Exportar TODO a PDF</button>
     </div>
     <button class="open-map-btn" id="openMapBtn">📊 Ver mapa de crecimiento</button>
 </div>
@@ -393,7 +388,7 @@
         <span>✏️ Editar nota (Markdown)</span>
         <button id="closeNotePanelBtn">&times;</button>
     </div>
-    <textarea id="noteTextarea" placeholder="Escribe aquí tu nota. Puedes usar **negrita**, *cursiva*, listas, [enlaces](https://...)..."></textarea>
+    <textarea id="noteTextarea" placeholder="Escribe aquí tu nota..."></textarea>
     <div class="note-panel-footer">
         <button id="saveNotePanelBtn">💾 Guardar</button>
     </div>
@@ -402,52 +397,20 @@
 
 <script>
     // --------------------------------------------------------------
-    // MANEJO DE ZOOM Y ARRASTRE CON PINCHE (TOUCH + MOUSE)
+    // 1. DIAPOSITIVAS Y ZOOM MANUAL (sin interferir con botones)
     // --------------------------------------------------------------
-    const viewer = document.getElementById('imageViewer');
     const img = document.getElementById('slideImg');
+    const viewer = document.getElementById('imageViewer');
     
     let transform = { x: 0, y: 0, scale: 1 };
     let isDragging = false;
     let dragStart = { x: 0, y: 0 };
     let lastTransform = { x: 0, y: 0 };
     
-    // Para pinch zoom
+    // Zoom con pellizco
     let initialPinchDistance = 0;
     let initialPinchScale = 1;
     let pinchCenter = { x: 0, y: 0 };
-    
-    function applyTransform() {
-        img.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
-    }
-    
-    // Resetear al cambiar diapositiva (centrar y escala 1)
-    function resetTransform() {
-        transform = { x: 0, y: 0, scale: 1 };
-        applyTransform();
-    }
-    
-    // Arrastre con ratón
-    viewer.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        isDragging = true;
-        dragStart.x = e.clientX - transform.x;
-        dragStart.y = e.clientY - transform.y;
-        viewer.classList.add('dragging');
-    });
-    window.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        transform.x = e.clientX - dragStart.x;
-        transform.y = e.clientY - dragStart.y;
-        applyTransform();
-    });
-    window.addEventListener('mouseup', () => {
-        isDragging = false;
-        viewer.classList.remove('dragging');
-    });
-    
-    // Táctil: arrastre con un dedo, zoom con dos dedos
-    let activeTouches = [];
     
     function getTouchDistance(touches) {
         if (touches.length < 2) return 0;
@@ -464,18 +427,47 @@
         };
     }
     
+    function applyTransform() {
+        img.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
+    }
+    
+    function resetTransform() {
+        transform = { x: 0, y: 0, scale: 1 };
+        applyTransform();
+    }
+    
+    // --- Eventos de ratón (arrastre) ---
+    viewer.addEventListener('mousedown', (e) => {
+        // Evitar que el ratón interfiera si se hace clic en botones (pero aquí no hay botones dentro)
+        isDragging = true;
+        dragStart.x = e.clientX - transform.x;
+        dragStart.y = e.clientY - transform.y;
+        viewer.style.cursor = 'grabbing';
+        e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        transform.x = e.clientX - dragStart.x;
+        transform.y = e.clientY - dragStart.y;
+        applyTransform();
+    });
+    window.addEventListener('mouseup', () => {
+        isDragging = false;
+        viewer.style.cursor = 'grab';
+    });
+    
+    // --- Eventos táctiles (arrastre con 1 dedo, zoom con 2) ---
     viewer.addEventListener('touchstart', (e) => {
+        // IMPORTANTE: Solo prevenimos si el objetivo NO es un botón del mapa (pero como el mapa está encima, no debería llegar aquí)
+        // Para evitar interferencias, dejamos que los botones del mapa capturen primero.
+        if (e.target.closest('.mapa-container')) return;
         e.preventDefault();
         const touches = Array.from(e.touches);
-        activeTouches = touches;
-        
         if (touches.length === 1) {
-            // Arrastre con un dedo
             isDragging = true;
             dragStart.x = touches[0].clientX - transform.x;
             dragStart.y = touches[0].clientY - transform.y;
         } else if (touches.length === 2) {
-            // Inicio de pinch
             isDragging = false;
             initialPinchDistance = getTouchDistance(touches);
             initialPinchScale = transform.scale;
@@ -488,45 +480,34 @@
     });
     
     viewer.addEventListener('touchmove', (e) => {
+        if (e.target.closest('.mapa-container')) return;
         e.preventDefault();
         const touches = Array.from(e.touches);
-        activeTouches = touches;
-        
         if (touches.length === 1 && isDragging) {
-            // Arrastre
             transform.x = touches[0].clientX - dragStart.x;
             transform.y = touches[0].clientY - dragStart.y;
             applyTransform();
-        } else if (touches.length === 2) {
-            // Zoom pinch
+        } else if (touches.length === 2 && initialPinchDistance > 0) {
             const newDistance = getTouchDistance(touches);
-            if (initialPinchDistance > 0) {
-                let newScale = initialPinchScale * (newDistance / initialPinchDistance);
-                newScale = Math.min(Math.max(newScale, 0.5), 5); // límites: 0.5x a 5x
-                if (newScale !== transform.scale) {
-                    const center = getTouchCenter(touches);
-                    // Ajustar traslación para que el punto bajo los dedos permanezca fijo
-                    const dx = center.x - (pinchCenter.x * transform.scale + transform.x);
-                    const dy = center.y - (pinchCenter.y * transform.scale + transform.y);
-                    transform.x += dx;
-                    transform.y += dy;
-                    transform.scale = newScale;
-                    applyTransform();
-                }
+            let newScale = initialPinchScale * (newDistance / initialPinchDistance);
+            newScale = Math.min(Math.max(newScale, 0.5), 5);
+            if (newScale !== transform.scale) {
+                const center = getTouchCenter(touches);
+                const dx = center.x - (pinchCenter.x * transform.scale + transform.x);
+                const dy = center.y - (pinchCenter.y * transform.scale + transform.y);
+                transform.x += dx;
+                transform.y += dy;
+                transform.scale = newScale;
+                applyTransform();
             }
         }
     });
     
     viewer.addEventListener('touchend', (e) => {
+        if (e.target.closest('.mapa-container')) return;
         e.preventDefault();
-        if (e.touches.length < 2) {
-            initialPinchDistance = 0;
-        }
-        if (e.touches.length === 0) {
-            isDragging = false;
-            viewer.classList.remove('dragging');
-        }
-        // Si queda un solo dedo, reactivar arrastre con la nueva posición
+        if (e.touches.length < 2) initialPinchDistance = 0;
+        if (e.touches.length === 0) isDragging = false;
         if (e.touches.length === 1) {
             const touch = e.touches[0];
             isDragging = true;
@@ -536,15 +517,15 @@
     });
     
     // --------------------------------------------------------------
-    // DIAPOSITIVAS
+    // 2. NAVEGACIÓN ENTRE DIAPOSITIVAS (RESETEA ZOOM)
     // --------------------------------------------------------------
     let currentSlide = 1;
-    let totalSlides = 29;
+    const totalSlides = 29;
     const IMG_PATH = "img/";
     
     function updateSlideImage() {
         img.src = `${IMG_PATH}Diapositiva${currentSlide}.PNG`;
-        resetTransform();  // Resetear zoom y posición al cambiar diapositiva
+        resetTransform();  // Cada nueva diapositiva comienza centrada y sin zoom
         if (window.currentRenderData) {
             renderizarMapa(window.currentRenderData.raices, window.currentRenderData.nodosMap, window.currentRenderData.hijosMap);
         }
@@ -563,10 +544,9 @@
     document.getElementById('prevSlideBtn').addEventListener('click', prevSlide);
     
     // --------------------------------------------------------------
-    // TEXTO ORIGINAL (mismo contenido)
+    // 3. MAPA MENTAL (TODO EL CONTENIDO ORIGINAL)
     // --------------------------------------------------------------
     const textoOriginal = `# ESTRUCTURA Y OPERACIÓN DE UN SISTEMA OPERATIVO MODERNO
-
 ## 1. DEFINICIÓN Y PROPÓSITO FUNDAMENTAL
 ### 1.1. EL SISTEMA OPERATIVO (SO) COMO SOFTWARE DE BASE
 #### 1.1.1. Intermediario entre hardware y usuario
@@ -584,7 +564,6 @@
 ##### 1.1.3.3. **Seguridad**: Protección de datos y procesos
 ##### 1.1.3.4. **Concurrencia**: Manejo de múltiples tareas simultáneas
 ##### 1.1.3.5. **Portabilidad**: Capacidad de ejecutarse en diversas arquitecturas
-
 ## 2. ARQUITECTURAS DEL KERNEL
 ### 2.1. EVOLUCIÓN Y CLASIFICACIÓN
 #### 2.1.1. Kernel Monolítico
@@ -607,7 +586,6 @@
 ##### 2.1.4.1. **Exokernel**: Expone recursos directamente a las aplicaciones
 ##### 2.1.4.2. **Unikernel**: Combina SO y aplicación en una sola imagen
 ##### 2.1.4.3. **Multikernel**: Adaptado para sistemas con muchos núcleos
-
 ## 3. GESTIÓN DE PROCESOS
 ### 3.1. DEFINICIÓN Y CICLO DE VIDA DEL PROCESO
 #### 3.1.1. El proceso como programa en ejecución
@@ -638,7 +616,6 @@
 ##### 3.2.3.2. **Hilos a nivel de kernel (KLT)**
 ##### 3.2.3.3. Modelos de mapeo (many-to-one, one-to-one, many-to-many)
 ##### 3.2.3.4. Ventajas: Menor overhead de creación y cambio de contexto
-
 ## 4. GESTIÓN DE MEMORIA
 ### 4.1. PRINCIPIOS BÁSICOS
 #### 4.1.1. Funciones clave del gestor de memoria
@@ -668,7 +645,6 @@
 ##### 4.2.4.1. Segmentación paginada (paged segmentation)
 ##### 4.2.4.2. Paginación multinivel (x86-64 usa 4 niveles)
 ##### 4.2.4.3. Swapping: intercambio de procesos completos entre RAM y disco
-
 ## 5. GESTIÓN DE ENTRADA/SALIDA (E/S)
 ### 5.1. PROPÓSITO DE LA CAPA DE E/S
 #### 5.1.1. Proporcionar una interfaz uniforme para dispositivos heterogéneos
@@ -693,7 +669,6 @@
 ##### 5.3.3.1. Controlador DMA transfiere datos directamente entre dispositivo y RAM
 ##### 5.3.3.2. La CPU solo interviene al inicio y al final de la transferencia
 ##### 5.3.3.3. Máxima eficiencia para grandes volúmenes de datos
-
 ## 6. SISTEMAS DE ARCHIVOS (FILE SYSTEMS)
 ### 6.1. PROPÓSITO Y ESTRUCTURA
 #### 6.1.1. Organización persistente de datos en dispositivos de almacenamiento
@@ -718,7 +693,6 @@
 ##### 6.2.4.2. SMB/CIFS (Server Message Block)
 ##### 6.2.4.3. Sistemas distribuidos: Ceph, GlusterFS
 ##### 6.2.4.4. Sistemas para Big Data: HDFS, GFS
-
 ## 7. SEGURIDAD Y PROTECCIÓN EN EL SISTEMA OPERATIVO
 ### 7.1. FUNDAMENTOS DE SEGURIDAD
 #### 7.1.1. **Confidencialidad**: Solo usuarios autorizados acceden a los datos
@@ -742,7 +716,6 @@
 #### 7.3.2. Cifrado de disco completo (BitLocker, FileVault, LUKS)
 ##### 7.3.2.1. Protege datos en caso de robo o pérdida del dispositivo
 ##### 7.3.2.2. Integración con TPM para atar la clave al hardware
-
 ## 8. COMUNICACIÓN APLICACIÓN - KERNEL: LLAMADAS AL SISTEMA
 ### 8.1. DEFINICIÓN Y PROPÓSITO
 #### 8.1.1. Interfaz que permite a los programas de usuario solicitar servicios al kernel
@@ -759,7 +732,6 @@
 #### 8.3.2. La función envoltura ejecuta una instrucción especial (int 0x80 o syscall)
 #### 8.3.3. El kernel ejecuta la rutina de servicio correspondiente
 #### 8.3.4. Se devuelve el control a la aplicación con el resultado
-
 ## 9. MANEJO DE INTERRUPCIONES
 ### 9.1. CONCEPTO Y TIPOS
 #### 9.1.1. Señal que indica al procesador que un evento requiere atención inmediata
@@ -775,7 +747,6 @@
 #### 9.3.2. Dispositivos de baja latencia tienen mayor prioridad
 #### 9.3.3. Una interrupción de mayor prioridad puede interrumpir a otra de menor prioridad
 #### 9.3.4. Esquemas de prioridad lógica vs física (PIC/APIC)
-
 ## 10. GESTIÓN DE FALLOS Y RECUPERACIÓN DE APLICACIONES
 ### 10.1. DETECCIÓN DE APLICACIONES NO RESPONSIVAS
 #### 10.1.1. El sistema monitoriza el tiempo de respuesta de las aplicaciones
@@ -790,7 +761,6 @@
 ##### 10.2.3.3. Dispositivos en uso
 #### 10.2.4. Elimina la entrada del PCB de la tabla de procesos
 #### 10.2.5. El resto del sistema permanece operativo y estable
-
 ## 11. COMUNICACIÓN ENTRE PROCESOS (IPC)
 ### 11.1. DEFINICIÓN Y NECESIDAD
 #### 11.1.1. Mecanismos que permiten a los procesos intercambiar datos y sincronizarse
@@ -813,7 +783,6 @@
 #### 11.2.6. **Sockets**
 ##### 11.2.6.1. Comunicación bidireccional (red o local)
 ##### 11.2.6.2. API estándar en redes y sistemas distribuidos
-
 ## 12. ADMINISTRACIÓN DE RECURSOS DEL SISTEMA
 ### 12.1. TIPOS DE RECURSOS GESTIONADOS
 #### 12.1.1. **CPU**: Tiempo de procesamiento mediante planificación
@@ -829,7 +798,6 @@
 #### 12.3.1. Registro de uso de recursos por proceso (accounting)
 #### 12.3.2. Herramientas de monitorización (top, htop, Task Manager)
 #### 12.3.3. Alertas y umbrales de consumo excesivo
-
 ## 13. VIRTUALIZACIÓN Y CONTENEDORES
 ### 13.1. MÁQUINAS VIRTUALES (VMs)
 #### 13.1.1. Emulación de hardware completo mediante hipervisor
@@ -842,7 +810,6 @@
 #### 13.2.3. Son más ligeros y rápidos de iniciar que las VMs
 #### 13.2.4. Ejemplos: Docker, LXC, Podman
 #### 13.2.5. Tecnologías subyacentes: namespaces y cgroups en Linux
-
 ## 14. TENDENCIAS MODERNAS EN SISTEMAS OPERATIVOS (2025-2026)
 ### 14.1. EVOLUCIÓN DE KERNELS CONOCIDOS
 #### 14.1.1. Linux 7.0: estabilidad, rendimiento y soporte de hardware emergente
@@ -861,13 +828,10 @@
 #### 14.4.1. Optimización para procesadores ARM y RISC-V
 #### 14.4.2. Soporte avanzado para memorias no volátiles (NVM, Optane)
 #### 14.4.3. Gestión heterogénea de núcleos (big.LITTLE, Hybrid x86)
-
 ## 15. CONCLUSIÓN
 El sistema operativo es una pieza de software de enorme complejidad y constante evolución. Sus componentes no operan de forma aislada, sino como un ecosistema altamente coordinado cuyo objetivo final es ofrecer una plataforma estable, segura y eficiente. Desde la planificación de procesos hasta la gestión de memoria virtual, y desde los controladores de dispositivos hasta la integración de inteligencia artificial, cada subsistema está meticulosamente diseñado para crear la ilusión de un sistema simple y receptivo sobre un hardware intrínsecamente complejo y paralelo. Comprender estas capas es fundamental para cualquier profesional de la informática.`;
 
-    // --------------------------------------------------------------
-    // PARSEO Y RENDERIZADO DEL MAPA (igual que antes)
-    // --------------------------------------------------------------
+    // Parsear
     function parsear(texto) {
         const lineas = texto.split(/\r?\n/);
         const nodos = [];
@@ -924,7 +888,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         }
     }
     
-    // Panel de notas
+    // Panel de notas (misma implementación funcional)
     const notePanel = document.getElementById('notePanel');
     const notePanelHeader = document.getElementById('notePanelHeader');
     const closeNotePanelBtn = document.getElementById('closeNotePanelBtn');
@@ -992,7 +956,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         noteStartHeight = notePanel.offsetHeight;
         e.preventDefault();
     });
-    // táctil
+    // Eventos táctiles para notas
     notePanelHeader.addEventListener('touchstart', (e) => {
         if (e.target === notePanelHeader || notePanelHeader.contains(e.target)) {
             isDraggingNote = true;
@@ -1149,7 +1113,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         startMapH = mapaContainer.offsetHeight;
         e.preventDefault();
     });
-    // táctil
     mapaHeader.addEventListener('touchstart', (e) => {
         if (e.target === mapaHeader || mapaHeader.contains(e.target)) {
             isMovingMap = true;
@@ -1209,74 +1172,103 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     document.getElementById('colapsarTodoMapa').addEventListener('click', colapsarTodoMapa);
     
     // --------------------------------------------------------------
-    // EXPORTAR A PPTX Y PDF (captura con el zoom actual)
+    // 4. EXPORTAR TODAS LAS DIAPOSITIVAS A PPTX Y PDF
     // --------------------------------------------------------------
-    const downloadPPTBtn = document.getElementById('downloadPPTBtn');
-    const downloadPDFBtn = document.getElementById('downloadPDFBtn');
+    const downloadAllPPTBtn = document.getElementById('downloadAllPPTBtn');
+    const downloadAllPDFBtn = document.getElementById('downloadAllPDFBtn');
     
-    async function capturarImagenActual() {
+    async function capturarDiapositiva(numero) {
+        // Cambiar a la diapositiva número
+        const originalSlide = currentSlide;
+        currentSlide = numero;
+        updateSlideImage();
+        // Esperar a que la imagen se cargue y se aplique el transform
+        await new Promise(resolve => {
+            if (img.complete) resolve();
+            else img.onload = resolve;
+        });
+        // Pequeña pausa para asegurar renderizado
+        await new Promise(r => setTimeout(r, 100));
         const elemento = document.querySelector('.image-viewer');
-        if (!elemento) { alert('No se pudo encontrar la diapositiva.'); return null; }
-        try {
-            const canvas = await html2canvas(elemento, {
-                scale: 2,
-                backgroundColor: '#000000',
-                useCORS: true,
-                logging: false
-            });
-            return canvas.toDataURL('image/png');
-        } catch (err) {
-            console.error(err);
-            alert('Error al capturar la imagen.');
-            return null;
-        }
+        if (!elemento) throw new Error('No se encuentra el visor');
+        const canvas = await html2canvas(elemento, {
+            scale: 2,
+            backgroundColor: '#000000',
+            useCORS: true,
+            logging: false
+        });
+        // Restaurar diapositiva original
+        currentSlide = originalSlide;
+        updateSlideImage();
+        await new Promise(resolve => { if (img.complete) resolve(); else img.onload = resolve; });
+        return canvas.toDataURL('image/png');
     }
     
-    downloadPPTBtn.addEventListener('click', async () => {
-        const btn = downloadPPTBtn;
-        const original = btn.textContent;
-        btn.textContent = '⏳ Generando PPTX...';
+    downloadAllPPTBtn.addEventListener('click', async () => {
+        const btn = downloadAllPPTBtn;
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Generando PPTX (29 diapositivas)...';
         btn.disabled = true;
-        const imgData = await capturarImagenActual();
-        if (imgData) {
-            try {
-                const PptxGenJS = window.PptxGenJS;
-                const pptx = new PptxGenJS();
+        try {
+            const PptxGenJS = window.PptxGenJS;
+            const pptx = new PptxGenJS();
+            for (let i = 1; i <= totalSlides; i++) {
+                const imgData = await capturarDiapositiva(i);
                 const slide = pptx.addSlide();
                 const w = pptx.layout.WIDTH;
                 const h = pptx.layout.HEIGHT;
                 slide.addImage({ data: imgData, x: 0, y: 0, w: w, h: h });
-                await pptx.writeFile({ fileName: `diapositiva_${currentSlide}.pptx` });
-            } catch (err) { console.error(err); alert('Error al generar PPTX.'); }
+                // Actualizar progreso en el botón
+                btn.textContent = `⏳ ${i}/${totalSlides} PPTX...`;
+            }
+            await pptx.writeFile({ fileName: `todas_diapositivas.pptx` });
+            alert('PPTX generado correctamente con 29 diapositivas.');
+        } catch (err) {
+            console.error(err);
+            alert('Error al generar PPTX: ' + err.message);
+        } finally {
+            btn.textContent = originalText;
+            btn.disabled = false;
         }
-        btn.textContent = original;
-        btn.disabled = false;
     });
     
-    downloadPDFBtn.addEventListener('click', async () => {
-        const btn = downloadPDFBtn;
-        const original = btn.textContent;
-        btn.textContent = '⏳ Generando PDF...';
+    downloadAllPDFBtn.addEventListener('click', async () => {
+        const btn = downloadAllPDFBtn;
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Generando PDF (29 páginas)...';
         btn.disabled = true;
-        const imgData = await capturarImagenActual();
-        if (imgData) {
-            try {
+        try {
+            const { jsPDF } = window.jspdf;
+            let pdf = null;
+            for (let i = 1; i <= totalSlides; i++) {
+                const imgData = await capturarDiapositiva(i);
+                // Cargar imagen para obtener dimensiones
                 const img = new Image();
                 img.src = imgData;
                 await new Promise(r => { img.onload = r; });
-                const { jsPDF } = window.jspdf;
                 const orientation = img.width > img.height ? 'landscape' : 'portrait';
-                const pdf = new jsPDF({ orientation, unit: 'px', format: [img.width, img.height] });
-                pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height, undefined, 'FAST');
-                pdf.save(`diapositiva_${currentSlide}.pdf`);
-            } catch (err) { console.error(err); alert('Error al generar PDF.'); }
+                if (i === 1) {
+                    pdf = new jsPDF({ orientation, unit: 'px', format: [img.width, img.height] });
+                    pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height, undefined, 'FAST');
+                } else {
+                    pdf.addPage([img.width, img.height], orientation);
+                    pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height, undefined, 'FAST');
+                }
+                btn.textContent = `⏳ ${i}/${totalSlides} PDF...`;
+            }
+            if (pdf) pdf.save(`todas_diapositivas.pdf`);
+            alert('PDF generado correctamente con 29 páginas.');
+        } catch (err) {
+            console.error(err);
+            alert('Error al generar PDF: ' + err.message);
+        } finally {
+            btn.textContent = originalText;
+            btn.disabled = false;
         }
-        btn.textContent = original;
-        btn.disabled = false;
     });
     
     // --------------------------------------------------------------
-    // INICIALIZACIÓN
+    // 5. INICIALIZACIÓN
     // --------------------------------------------------------------
     updateSlideImage();
     const parsed = parsear(textoOriginal);
