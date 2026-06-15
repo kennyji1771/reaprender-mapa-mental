@@ -19,6 +19,7 @@
             background: #0a0f1e;
             height: 100vh;
             overflow: hidden;
+            position: relative;
         }
         .presentation {
             position: relative;
@@ -301,58 +302,68 @@
             opacity: 0.6;
         }
         .resize-handle:hover { opacity: 1; }
+        
+        /* Botones de navegación - siempre visibles y centrados */
         .nav-buttons {
-            position: absolute;
-            bottom: 20px;
+            position: fixed;
+            bottom: 15px;
             left: 0;
             right: 0;
             text-align: center;
-            z-index: 15;
+            z-index: 20;
             display: flex;
             justify-content: center;
-            gap: 20px;
+            gap: 15px;
             flex-wrap: wrap;
-            padding: 0 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(8px);
+            border-radius: 60px;
+            width: fit-content;
+            margin: 0 auto;
+            pointer-events: auto;
         }
         .nav-buttons button {
-            background: rgba(0,0,0,0.7);
+            background: rgba(0,0,0,0.8);
             color: white;
             border: none;
-            padding: 12px 24px;
+            padding: 10px 20px;
             border-radius: 40px;
-            font-size: 1rem;
+            font-size: 0.9rem;
             cursor: pointer;
-            backdrop-filter: blur(4px);
             transition: 0.2s;
             font-weight: bold;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
         .nav-buttons button:hover {
             background: #ffcc00;
             color: black;
         }
         .open-map-btn {
-            position: absolute;
+            position: fixed;
             top: 20px;
             right: 20px;
-            z-index: 15;
+            z-index: 20;
             background: #ffcc00;
             border: none;
             padding: 10px 20px;
             border-radius: 40px;
             font-weight: bold;
             cursor: pointer;
-            font-size: 1rem;
+            font-size: 0.9rem;
             box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-        }
-        .open-map-btn:hover {
-            transform: scale(1.02);
-            background: #ffdd44;
         }
         @media (max-width: 768px) {
             .mapa-container { width: 95%; left: 2.5%; height: 85%; top: 7.5%; }
-            .nav-buttons button { padding: 8px 16px; }
-            .open-map-btn { padding: 6px 12px; font-size: 0.9rem; }
-            .note-panel { width: 90%; left: 5%; top: 10%; }
+            .nav-buttons button { padding: 8px 16px; font-size: 0.8rem; }
+            .open-map-btn { padding: 6px 12px; font-size: 0.8rem; top: 10px; right: 10px; }
+            .nav-buttons { gap: 10px; bottom: 10px; }
+        }
+        /* En horizontal, los botones se mantienen visibles */
+        @media (orientation: landscape) {
+            .nav-buttons { bottom: 10px; padding: 8px; }
+            .nav-buttons button { padding: 6px 12px; }
+            .open-map-btn { top: 10px; right: 10px; }
         }
     </style>
 </head>
@@ -397,7 +408,7 @@
 
 <script>
     // --------------------------------------------------------------
-    // 1. DIAPOSITIVAS Y ZOOM MANUAL (sin interferir con botones)
+    // 1. MANEJO DE ZOOM Y ARRASTRE (compatible con botones)
     // --------------------------------------------------------------
     const img = document.getElementById('slideImg');
     const viewer = document.getElementById('imageViewer');
@@ -405,9 +416,7 @@
     let transform = { x: 0, y: 0, scale: 1 };
     let isDragging = false;
     let dragStart = { x: 0, y: 0 };
-    let lastTransform = { x: 0, y: 0 };
     
-    // Zoom con pellizco
     let initialPinchDistance = 0;
     let initialPinchScale = 1;
     let pinchCenter = { x: 0, y: 0 };
@@ -436,9 +445,8 @@
         applyTransform();
     }
     
-    // --- Eventos de ratón (arrastre) ---
+    // Ratón
     viewer.addEventListener('mousedown', (e) => {
-        // Evitar que el ratón interfiera si se hace clic en botones (pero aquí no hay botones dentro)
         isDragging = true;
         dragStart.x = e.clientX - transform.x;
         dragStart.y = e.clientY - transform.y;
@@ -456,11 +464,13 @@
         viewer.style.cursor = 'grab';
     });
     
-    // --- Eventos táctiles (arrastre con 1 dedo, zoom con 2) ---
+    // Táctil (solo si el objetivo no es un botón del mapa)
+    function isMapElement(target) {
+        return target.closest('.mapa-container') || target.closest('.note-panel') || target.closest('.nav-buttons') || target.closest('.open-map-btn');
+    }
+    
     viewer.addEventListener('touchstart', (e) => {
-        // IMPORTANTE: Solo prevenimos si el objetivo NO es un botón del mapa (pero como el mapa está encima, no debería llegar aquí)
-        // Para evitar interferencias, dejamos que los botones del mapa capturen primero.
-        if (e.target.closest('.mapa-container')) return;
+        if (isMapElement(e.target)) return;
         e.preventDefault();
         const touches = Array.from(e.touches);
         if (touches.length === 1) {
@@ -480,7 +490,7 @@
     });
     
     viewer.addEventListener('touchmove', (e) => {
-        if (e.target.closest('.mapa-container')) return;
+        if (isMapElement(e.target)) return;
         e.preventDefault();
         const touches = Array.from(e.touches);
         if (touches.length === 1 && isDragging) {
@@ -504,7 +514,7 @@
     });
     
     viewer.addEventListener('touchend', (e) => {
-        if (e.target.closest('.mapa-container')) return;
+        if (isMapElement(e.target)) return;
         e.preventDefault();
         if (e.touches.length < 2) initialPinchDistance = 0;
         if (e.touches.length === 0) isDragging = false;
@@ -517,7 +527,7 @@
     });
     
     // --------------------------------------------------------------
-    // 2. NAVEGACIÓN ENTRE DIAPOSITIVAS (RESETEA ZOOM)
+    // 2. DIAPOSITIVAS
     // --------------------------------------------------------------
     let currentSlide = 1;
     const totalSlides = 29;
@@ -525,7 +535,7 @@
     
     function updateSlideImage() {
         img.src = `${IMG_PATH}Diapositiva${currentSlide}.PNG`;
-        resetTransform();  // Cada nueva diapositiva comienza centrada y sin zoom
+        resetTransform();
         if (window.currentRenderData) {
             renderizarMapa(window.currentRenderData.raices, window.currentRenderData.nodosMap, window.currentRenderData.hijosMap);
         }
@@ -544,7 +554,7 @@
     document.getElementById('prevSlideBtn').addEventListener('click', prevSlide);
     
     // --------------------------------------------------------------
-    // 3. MAPA MENTAL (TODO EL CONTENIDO ORIGINAL)
+    // 3. MAPA MENTAL (TEXTO ORIGINAL COMPLETO)
     // --------------------------------------------------------------
     const textoOriginal = `# ESTRUCTURA Y OPERACIÓN DE UN SISTEMA OPERATIVO MODERNO
 ## 1. DEFINICIÓN Y PROPÓSITO FUNDAMENTAL
@@ -831,7 +841,6 @@
 ## 15. CONCLUSIÓN
 El sistema operativo es una pieza de software de enorme complejidad y constante evolución. Sus componentes no operan de forma aislada, sino como un ecosistema altamente coordinado cuyo objetivo final es ofrecer una plataforma estable, segura y eficiente. Desde la planificación de procesos hasta la gestión de memoria virtual, y desde los controladores de dispositivos hasta la integración de inteligencia artificial, cada subsistema está meticulosamente diseñado para crear la ilusión de un sistema simple y receptivo sobre un hardware intrínsecamente complejo y paralelo. Comprender estas capas es fundamental para cualquier profesional de la informática.`;
 
-    // Parsear
     function parsear(texto) {
         const lineas = texto.split(/\r?\n/);
         const nodos = [];
@@ -866,7 +875,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         return { nodos, hijosMap, raices };
     }
     
-    // Notas
+    // Notas (localStorage)
     function getNoteKey(nodeId, slide) { return `nota_${nodeId}_slide_${slide}`; }
     function loadNote(nodeId, slide) { return localStorage.getItem(getNoteKey(nodeId, slide)) || ''; }
     function saveNote(nodeId, slide, content) { localStorage.setItem(getNoteKey(nodeId, slide), content); }
@@ -888,7 +897,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         }
     }
     
-    // Panel de notas (misma implementación funcional)
+    // Panel de notas (omitido por brevedad, pero igual al anterior)
     const notePanel = document.getElementById('notePanel');
     const notePanelHeader = document.getElementById('notePanelHeader');
     const closeNotePanelBtn = document.getElementById('closeNotePanelBtn');
@@ -956,7 +965,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         noteStartHeight = notePanel.offsetHeight;
         e.preventDefault();
     });
-    // Eventos táctiles para notas
+    // Táctil notas
     notePanelHeader.addEventListener('touchstart', (e) => {
         if (e.target === notePanelHeader || notePanelHeader.contains(e.target)) {
             isDraggingNote = true;
@@ -993,7 +1002,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     });
     window.addEventListener('touchend', () => { isDraggingNote = false; isResizingNote = false; });
     
-    // Renderizado del mapa
     function renderizarMapa(raices, nodosMap, hijosMap) {
         const contenedor = document.getElementById('mapaContent');
         if (!raices.length) return;
@@ -1075,7 +1083,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         document.querySelectorAll('#mapaContent .icon').forEach(i => i.textContent = '▶');
     }
     
-    // Movimiento y redimension del contenedor del mapa
     const mapaContainer = document.getElementById('mapaContainer');
     const mapaHeader = document.getElementById('mapaHeader');
     const resizeHandleMap = document.getElementById('resizeHandle');
@@ -1149,7 +1156,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     });
     window.addEventListener('touchend', () => { isMovingMap = false; isResizingMap = false; });
     
-    // Apertura/cierre del mapa
     const overlay = document.getElementById('overlay');
     const openMapBtn = document.getElementById('openMapBtn');
     const cerrarMapaBtn = document.getElementById('cerrarMapaBtn');
@@ -1172,23 +1178,17 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     document.getElementById('colapsarTodoMapa').addEventListener('click', colapsarTodoMapa);
     
     // --------------------------------------------------------------
-    // 4. EXPORTAR TODAS LAS DIAPOSITIVAS A PPTX Y PDF
+    // 4. EXPORTAR TODAS LAS DIAPOSITIVAS A PPTX Y PDF (CORREGIDO)
     // --------------------------------------------------------------
     const downloadAllPPTBtn = document.getElementById('downloadAllPPTBtn');
     const downloadAllPDFBtn = document.getElementById('downloadAllPDFBtn');
     
     async function capturarDiapositiva(numero) {
-        // Cambiar a la diapositiva número
         const originalSlide = currentSlide;
         currentSlide = numero;
         updateSlideImage();
-        // Esperar a que la imagen se cargue y se aplique el transform
-        await new Promise(resolve => {
-            if (img.complete) resolve();
-            else img.onload = resolve;
-        });
-        // Pequeña pausa para asegurar renderizado
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(resolve => { if (img.complete) resolve(); else img.onload = resolve; });
+        await new Promise(r => setTimeout(r, 150)); // esperar renderizado
         const elemento = document.querySelector('.image-viewer');
         if (!elemento) throw new Error('No se encuentra el visor');
         const canvas = await html2canvas(elemento, {
@@ -1197,7 +1197,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
             useCORS: true,
             logging: false
         });
-        // Restaurar diapositiva original
         currentSlide = originalSlide;
         updateSlideImage();
         await new Promise(resolve => { if (img.complete) resolve(); else img.onload = resolve; });
@@ -1212,13 +1211,15 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         try {
             const PptxGenJS = window.PptxGenJS;
             const pptx = new PptxGenJS();
+            // Definir tamaño estándar de diapositiva (16:9)
+            pptx.defineLayout({ name: 'CUSTOM', width: 10, height: 5.625 });
+            pptx.layout = 'CUSTOM';
+            
             for (let i = 1; i <= totalSlides; i++) {
                 const imgData = await capturarDiapositiva(i);
                 const slide = pptx.addSlide();
-                const w = pptx.layout.WIDTH;
-                const h = pptx.layout.HEIGHT;
-                slide.addImage({ data: imgData, x: 0, y: 0, w: w, h: h });
-                // Actualizar progreso en el botón
+                // Ajustar imagen para que ocupe toda la diapositiva sin deformarse demasiado
+                slide.addImage({ data: imgData, x: 0, y: 0, w: '100%', h: '100%' });
                 btn.textContent = `⏳ ${i}/${totalSlides} PPTX...`;
             }
             await pptx.writeFile({ fileName: `todas_diapositivas.pptx` });
@@ -1242,17 +1243,18 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
             let pdf = null;
             for (let i = 1; i <= totalSlides; i++) {
                 const imgData = await capturarDiapositiva(i);
-                // Cargar imagen para obtener dimensiones
-                const img = new Image();
-                img.src = imgData;
-                await new Promise(r => { img.onload = r; });
-                const orientation = img.width > img.height ? 'landscape' : 'portrait';
+                const imgTemp = new Image();
+                imgTemp.src = imgData;
+                await new Promise(r => { imgTemp.onload = r; });
+                const orientation = imgTemp.width > imgTemp.height ? 'landscape' : 'portrait';
+                const pageWidth = imgTemp.width;
+                const pageHeight = imgTemp.height;
                 if (i === 1) {
-                    pdf = new jsPDF({ orientation, unit: 'px', format: [img.width, img.height] });
-                    pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height, undefined, 'FAST');
+                    pdf = new jsPDF({ orientation, unit: 'px', format: [pageWidth, pageHeight] });
+                    pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
                 } else {
-                    pdf.addPage([img.width, img.height], orientation);
-                    pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height, undefined, 'FAST');
+                    pdf.addPage([pageWidth, pageHeight], orientation);
+                    pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
                 }
                 btn.textContent = `⏳ ${i}/${totalSlides} PDF...`;
             }
@@ -1267,9 +1269,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         }
     });
     
-    // --------------------------------------------------------------
-    // 5. INICIALIZACIÓN
-    // --------------------------------------------------------------
+    // Inicialización
     updateSlideImage();
     const parsed = parsear(textoOriginal);
     const nodosMapGlobal = new Map();
