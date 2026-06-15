@@ -2,7 +2,8 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <!-- user-scalable=no evita el zoom nativo del navegador, nosotros manejamos el zoom manual -->
     <title>Reaprender - Crecimiento Orgánico del Conocimiento</title>
     <!-- Librerías para exportación -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -33,9 +34,9 @@
             height: 100%;
             overflow: hidden;
             position: relative;
-            touch-action: manipulation;   /* ✅ Permite zoom por pellizco en móviles */
             cursor: grab;
             background: #000;
+            touch-action: none;  /* Controlamos todo táctil manualmente (arrastre y zoom) */
         }
         .image-viewer.dragging { cursor: grabbing; }
         .image-viewer img {
@@ -44,6 +45,8 @@
             width: auto;
             height: auto;
             pointer-events: none;
+            transform-origin: 0 0;
+            will-change: transform;
         }
         .overlay {
             position: absolute;
@@ -214,7 +217,6 @@
             margin-left: 4px;
             box-shadow: 0 0 4px #00e5ff;
         }
-        /* Panel de notas flotante */
         .note-panel {
             position: absolute;
             top: 20%;
@@ -386,7 +388,6 @@
     <button class="open-map-btn" id="openMapBtn">📊 Ver mapa de crecimiento</button>
 </div>
 
-<!-- Panel flotante de notas -->
 <div id="notePanel" class="note-panel">
     <div class="note-panel-header" id="notePanelHeader">
         <span>✏️ Editar nota (Markdown)</span>
@@ -401,69 +402,168 @@
 
 <script>
     // --------------------------------------------------------------
-    // DIAPOSITIVAS (zoom y arrastre)
+    // MANEJO DE ZOOM Y ARRASTRE CON PINCHE (TOUCH + MOUSE)
+    // --------------------------------------------------------------
+    const viewer = document.getElementById('imageViewer');
+    const img = document.getElementById('slideImg');
+    
+    let transform = { x: 0, y: 0, scale: 1 };
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let lastTransform = { x: 0, y: 0 };
+    
+    // Para pinch zoom
+    let initialPinchDistance = 0;
+    let initialPinchScale = 1;
+    let pinchCenter = { x: 0, y: 0 };
+    
+    function applyTransform() {
+        img.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
+    }
+    
+    // Resetear al cambiar diapositiva (centrar y escala 1)
+    function resetTransform() {
+        transform = { x: 0, y: 0, scale: 1 };
+        applyTransform();
+    }
+    
+    // Arrastre con ratón
+    viewer.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        isDragging = true;
+        dragStart.x = e.clientX - transform.x;
+        dragStart.y = e.clientY - transform.y;
+        viewer.classList.add('dragging');
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        transform.x = e.clientX - dragStart.x;
+        transform.y = e.clientY - dragStart.y;
+        applyTransform();
+    });
+    window.addEventListener('mouseup', () => {
+        isDragging = false;
+        viewer.classList.remove('dragging');
+    });
+    
+    // Táctil: arrastre con un dedo, zoom con dos dedos
+    let activeTouches = [];
+    
+    function getTouchDistance(touches) {
+        if (touches.length < 2) return 0;
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.hypot(dx, dy);
+    }
+    
+    function getTouchCenter(touches) {
+        if (touches.length < 2) return { x: 0, y: 0 };
+        return {
+            x: (touches[0].clientX + touches[1].clientX) / 2,
+            y: (touches[0].clientY + touches[1].clientY) / 2
+        };
+    }
+    
+    viewer.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touches = Array.from(e.touches);
+        activeTouches = touches;
+        
+        if (touches.length === 1) {
+            // Arrastre con un dedo
+            isDragging = true;
+            dragStart.x = touches[0].clientX - transform.x;
+            dragStart.y = touches[0].clientY - transform.y;
+        } else if (touches.length === 2) {
+            // Inicio de pinch
+            isDragging = false;
+            initialPinchDistance = getTouchDistance(touches);
+            initialPinchScale = transform.scale;
+            const center = getTouchCenter(touches);
+            pinchCenter = {
+                x: (center.x - transform.x) / transform.scale,
+                y: (center.y - transform.y) / transform.scale
+            };
+        }
+    });
+    
+    viewer.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touches = Array.from(e.touches);
+        activeTouches = touches;
+        
+        if (touches.length === 1 && isDragging) {
+            // Arrastre
+            transform.x = touches[0].clientX - dragStart.x;
+            transform.y = touches[0].clientY - dragStart.y;
+            applyTransform();
+        } else if (touches.length === 2) {
+            // Zoom pinch
+            const newDistance = getTouchDistance(touches);
+            if (initialPinchDistance > 0) {
+                let newScale = initialPinchScale * (newDistance / initialPinchDistance);
+                newScale = Math.min(Math.max(newScale, 0.5), 5); // límites: 0.5x a 5x
+                if (newScale !== transform.scale) {
+                    const center = getTouchCenter(touches);
+                    // Ajustar traslación para que el punto bajo los dedos permanezca fijo
+                    const dx = center.x - (pinchCenter.x * transform.scale + transform.x);
+                    const dy = center.y - (pinchCenter.y * transform.scale + transform.y);
+                    transform.x += dx;
+                    transform.y += dy;
+                    transform.scale = newScale;
+                    applyTransform();
+                }
+            }
+        }
+    });
+    
+    viewer.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        if (e.touches.length < 2) {
+            initialPinchDistance = 0;
+        }
+        if (e.touches.length === 0) {
+            isDragging = false;
+            viewer.classList.remove('dragging');
+        }
+        // Si queda un solo dedo, reactivar arrastre con la nueva posición
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            isDragging = true;
+            dragStart.x = touch.clientX - transform.x;
+            dragStart.y = touch.clientY - transform.y;
+        }
+    });
+    
+    // --------------------------------------------------------------
+    // DIAPOSITIVAS
     // --------------------------------------------------------------
     let currentSlide = 1;
     let totalSlides = 29;
     const IMG_PATH = "img/";
-    let slideImg = document.getElementById('slideImg');
-    let viewer = document.getElementById('imageViewer');
-    let isDraggingSlide = false;
-    let startX = 0, startY = 0;
-    let translateX = 0, translateY = 0;
     
     function updateSlideImage() {
-        slideImg.src = `${IMG_PATH}Diapositiva${currentSlide}.PNG`;
-        translateX = 0; translateY = 0;
-        applyTransformSlide();
+        img.src = `${IMG_PATH}Diapositiva${currentSlide}.PNG`;
+        resetTransform();  // Resetear zoom y posición al cambiar diapositiva
+        if (window.currentRenderData) {
+            renderizarMapa(window.currentRenderData.raices, window.currentRenderData.nodosMap, window.currentRenderData.hijosMap);
+        }
     }
-    function applyTransformSlide() { slideImg.style.transform = `translate(${translateX}px, ${translateY}px)`; }
-    function onPointerStartSlide(e) {
-        e.preventDefault();
-        isDraggingSlide = true;
-        const point = e.touches ? e.touches[0] : e;
-        startX = point.clientX - translateX;
-        startY = point.clientY - translateY;
-        viewer.classList.add('dragging');
-    }
-    function onPointerMoveSlide(e) {
-        if (!isDraggingSlide) return;
-        e.preventDefault();
-        const point = e.touches ? e.touches[0] : e;
-        translateX = point.clientX - startX;
-        translateY = point.clientY - startY;
-        applyTransformSlide();
-    }
-    function onPointerEndSlide() {
-        isDraggingSlide = false;
-        viewer.classList.remove('dragging');
-    }
-    viewer.addEventListener('mousedown', onPointerStartSlide);
-    window.addEventListener('mousemove', onPointerMoveSlide);
-    window.addEventListener('mouseup', onPointerEndSlide);
-    viewer.addEventListener('touchstart', onPointerStartSlide);
-    window.addEventListener('touchmove', onPointerMoveSlide);
-    window.addEventListener('touchend', onPointerEndSlide);
     
     function nextSlide() {
         currentSlide = currentSlide < totalSlides ? currentSlide + 1 : 1;
         updateSlideImage();
-        if (window.currentRenderData) {
-            renderizarMapa(window.currentRenderData.raices, window.currentRenderData.nodosMap, window.currentRenderData.hijosMap);
-        }
     }
     function prevSlide() {
         currentSlide = currentSlide > 1 ? currentSlide - 1 : totalSlides;
         updateSlideImage();
-        if (window.currentRenderData) {
-            renderizarMapa(window.currentRenderData.raices, window.currentRenderData.nodosMap, window.currentRenderData.hijosMap);
-        }
     }
+    
     document.getElementById('nextSlideBtn').addEventListener('click', nextSlide);
     document.getElementById('prevSlideBtn').addEventListener('click', prevSlide);
     
     // --------------------------------------------------------------
-    // TEXTO ORIGINAL COMPLETO (sin cambios)
+    // TEXTO ORIGINAL (mismo contenido)
     // --------------------------------------------------------------
     const textoOriginal = `# ESTRUCTURA Y OPERACIÓN DE UN SISTEMA OPERATIVO MODERNO
 
@@ -766,7 +866,7 @@
 El sistema operativo es una pieza de software de enorme complejidad y constante evolución. Sus componentes no operan de forma aislada, sino como un ecosistema altamente coordinado cuyo objetivo final es ofrecer una plataforma estable, segura y eficiente. Desde la planificación de procesos hasta la gestión de memoria virtual, y desde los controladores de dispositivos hasta la integración de inteligencia artificial, cada subsistema está meticulosamente diseñado para crear la ilusión de un sistema simple y receptivo sobre un hardware intrínsecamente complejo y paralelo. Comprender estas capas es fundamental para cualquier profesional de la informática.`;
 
     // --------------------------------------------------------------
-    // PARSEO Y RENDERIZADO DEL MAPA
+    // PARSEO Y RENDERIZADO DEL MAPA (igual que antes)
     // --------------------------------------------------------------
     function parsear(texto) {
         const lineas = texto.split(/\r?\n/);
@@ -802,18 +902,10 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         return { nodos, hijosMap, raices };
     }
     
-    // Sistema de notas (localStorage)
-    function getNoteKey(nodeId, slide) {
-        return `nota_${nodeId}_slide_${slide}`;
-    }
-    function loadNote(nodeId, slide) {
-        const key = getNoteKey(nodeId, slide);
-        return localStorage.getItem(key) || '';
-    }
-    function saveNote(nodeId, slide, content) {
-        const key = getNoteKey(nodeId, slide);
-        localStorage.setItem(key, content);
-    }
+    // Notas
+    function getNoteKey(nodeId, slide) { return `nota_${nodeId}_slide_${slide}`; }
+    function loadNote(nodeId, slide) { return localStorage.getItem(getNoteKey(nodeId, slide)) || ''; }
+    function saveNote(nodeId, slide, content) { localStorage.setItem(getNoteKey(nodeId, slide), content); }
     function updateNoteIndicator(card, nodeId, slide) {
         const noteBtn = card.querySelector('.note-btn');
         if (!noteBtn) return;
@@ -824,7 +916,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
                 indicator.className = 'note-indicator';
                 noteBtn.appendChild(indicator);
             }
-            noteBtn.style.opacity = '1';
             noteBtn.title = 'Editar nota (tiene contenido)';
         } else {
             const indicator = noteBtn.querySelector('.note-indicator');
@@ -833,16 +924,14 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         }
     }
     
-    // Panel flotante de notas
+    // Panel de notas
     const notePanel = document.getElementById('notePanel');
     const notePanelHeader = document.getElementById('notePanelHeader');
     const closeNotePanelBtn = document.getElementById('closeNotePanelBtn');
     const saveNotePanelBtn = document.getElementById('saveNotePanelBtn');
     const noteTextarea = document.getElementById('noteTextarea');
     const resizeHandleNote = document.getElementById('resizeHandleNote');
-    
-    let currentNoteNodeId = null;
-    let currentNoteCard = null;
+    let currentNoteNodeId = null, currentNoteCard = null;
     let isDraggingNote = false, isResizingNote = false;
     let noteStartX, noteStartY, noteStartLeft, noteStartTop;
     let noteStartWidth, noteStartHeight, noteStartMouseX, noteStartMouseY;
@@ -851,35 +940,27 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         currentNoteNodeId = nodeId;
         currentNoteCard = card;
         notePanel.style.display = 'flex';
-        const content = loadNote(nodeId, currentSlide);
-        noteTextarea.value = content;
+        noteTextarea.value = loadNote(nodeId, currentSlide);
         if (!notePanel.style.left || notePanel.style.left === 'auto') {
             notePanel.style.left = '20%';
             notePanel.style.top = '20%';
         }
     }
-    
     function closeNotePanel() {
         notePanel.style.display = 'none';
         currentNoteNodeId = null;
         currentNoteCard = null;
     }
-    
-    async function saveCurrentNotePanel() {
+    function saveCurrentNotePanel() {
         if (currentNoteNodeId === null) return;
-        const content = noteTextarea.value;
-        saveNote(currentNoteNodeId, currentSlide, content);
-        if (currentNoteCard) {
-            updateNoteIndicator(currentNoteCard, currentNoteNodeId, currentSlide);
-        }
-        alert("Nota guardada correctamente.");
+        saveNote(currentNoteNodeId, currentSlide, noteTextarea.value);
+        if (currentNoteCard) updateNoteIndicator(currentNoteCard, currentNoteNodeId, currentSlide);
+        alert("Nota guardada.");
         closeNotePanel();
     }
-    
     closeNotePanelBtn.addEventListener('click', closeNotePanel);
     saveNotePanelBtn.addEventListener('click', saveCurrentNotePanel);
     
-    // Arrastre del panel de notas
     notePanelHeader.addEventListener('mousedown', (e) => {
         if (e.target === notePanelHeader || notePanelHeader.contains(e.target)) {
             isDraggingNote = true;
@@ -887,27 +968,22 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
             noteStartY = e.clientY;
             noteStartLeft = notePanel.offsetLeft;
             noteStartTop = notePanel.offsetTop;
-            notePanel.style.cursor = 'grabbing';
             e.preventDefault();
         }
     });
     window.addEventListener('mousemove', (e) => {
         if (isDraggingNote) {
-            let dx = e.clientX - noteStartX;
-            let dy = e.clientY - noteStartY;
-            notePanel.style.left = `${noteStartLeft + dx}px`;
-            notePanel.style.top = `${noteStartTop + dy}px`;
+            notePanel.style.left = `${noteStartLeft + (e.clientX - noteStartX)}px`;
+            notePanel.style.top = `${noteStartTop + (e.clientY - noteStartY)}px`;
         }
         if (isResizingNote) {
-            let dw = e.clientX - noteStartMouseX;
-            let dh = e.clientY - noteStartMouseY;
-            let newWidth = Math.max(250, noteStartWidth + dw);
-            let newHeight = Math.max(200, noteStartHeight + dh);
-            notePanel.style.width = `${newWidth}px`;
-            notePanel.style.height = `${newHeight}px`;
+            let newW = Math.max(250, noteStartWidth + (e.clientX - noteStartMouseX));
+            let newH = Math.max(200, noteStartHeight + (e.clientY - noteStartMouseY));
+            notePanel.style.width = `${newW}px`;
+            notePanel.style.height = `${newH}px`;
         }
     });
-    window.addEventListener('mouseup', () => { isDraggingNote = false; isResizingNote = false; notePanel.style.cursor = ''; });
+    window.addEventListener('mouseup', () => { isDraggingNote = false; isResizingNote = false; });
     resizeHandleNote.addEventListener('mousedown', (e) => {
         isResizingNote = true;
         noteStartMouseX = e.clientX;
@@ -916,12 +992,13 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         noteStartHeight = notePanel.offsetHeight;
         e.preventDefault();
     });
+    // táctil
     notePanelHeader.addEventListener('touchstart', (e) => {
         if (e.target === notePanelHeader || notePanelHeader.contains(e.target)) {
             isDraggingNote = true;
-            const touch = e.touches[0];
-            noteStartX = touch.clientX;
-            noteStartY = touch.clientY;
+            const t = e.touches[0];
+            noteStartX = t.clientX;
+            noteStartY = t.clientY;
             noteStartLeft = notePanel.offsetLeft;
             noteStartTop = notePanel.offsetTop;
             e.preventDefault();
@@ -929,9 +1006,9 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     });
     resizeHandleNote.addEventListener('touchstart', (e) => {
         isResizingNote = true;
-        const touch = e.touches[0];
-        noteStartMouseX = touch.clientX;
-        noteStartMouseY = touch.clientY;
+        const t = e.touches[0];
+        noteStartMouseX = t.clientX;
+        noteStartMouseY = t.clientY;
         noteStartWidth = notePanel.offsetWidth;
         noteStartHeight = notePanel.offsetHeight;
         e.preventDefault();
@@ -956,7 +1033,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     function renderizarMapa(raices, nodosMap, hijosMap) {
         const contenedor = document.getElementById('mapaContent');
         if (!raices.length) return;
-        
         const build = (idNodo) => {
             const nodo = nodosMap.get(idNodo);
             if (!nodo) return null;
@@ -969,7 +1045,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
             const spanTitulo = document.createElement('span');
             spanTitulo.textContent = nodo.etiqueta;
             tituloDiv.appendChild(spanTitulo);
-            
             if (nodo.nivel >= 1 && nodo.nivel <= 4) {
                 const noteBtn = document.createElement('button');
                 noteBtn.innerHTML = '✏️';
@@ -981,9 +1056,7 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
                 });
                 tituloDiv.appendChild(noteBtn);
             }
-            
-            let childDiv = null;
-            let icono = null;
+            let childDiv = null, icono = null;
             if (hijos.length) {
                 childDiv = document.createElement('div');
                 childDiv.className = 'children collapsed';
@@ -999,7 +1072,6 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
                 tituloDiv.appendChild(icono);
             }
             card.appendChild(tituloDiv);
-            
             if (hijos.length) {
                 const toggle = () => {
                     if (childDiv.classList.contains('collapsed')) {
@@ -1016,13 +1088,11 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
                     toggle();
                 });
             }
-            
             if (nodo.nivel >= 1 && nodo.nivel <= 4) {
                 setTimeout(() => updateNoteIndicator(card, nodo.id, currentSlide), 0);
             }
             return card;
         };
-        
         const rootDiv = document.createElement('div');
         for (let r of raices) {
             const rc = build(r.id);
@@ -1041,86 +1111,85 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
         document.querySelectorAll('#mapaContent .icon').forEach(i => i.textContent = '▶');
     }
     
-    // Movimiento y redimensionamiento del panel principal
+    // Movimiento y redimension del contenedor del mapa
     const mapaContainer = document.getElementById('mapaContainer');
     const mapaHeader = document.getElementById('mapaHeader');
-    const resizeHandle = document.getElementById('resizeHandle');
-    let isResizing = false, isMoving = false;
-    let startMouseX, startMouseY, startWidth, startHeight, startLeft, startTop;
+    const resizeHandleMap = document.getElementById('resizeHandle');
+    let isResizingMap = false, isMovingMap = false;
+    let startMapX, startMapY, startMapLeft, startMapTop, startMapW, startMapH;
     
     mapaHeader.addEventListener('mousedown', (e) => {
         if (e.target === mapaHeader || mapaHeader.contains(e.target)) {
-            isMoving = true;
-            startMouseX = e.clientX;
-            startMouseY = e.clientY;
-            startLeft = mapaContainer.offsetLeft;
-            startTop = mapaContainer.offsetTop;
-            mapaContainer.style.cursor = 'grabbing';
+            isMovingMap = true;
+            startMapX = e.clientX;
+            startMapY = e.clientY;
+            startMapLeft = mapaContainer.offsetLeft;
+            startMapTop = mapaContainer.offsetTop;
             e.preventDefault();
         }
     });
     window.addEventListener('mousemove', (e) => {
-        if (isMoving) {
-            mapaContainer.style.left = `${startLeft + (e.clientX - startMouseX)}px`;
-            mapaContainer.style.top = `${startTop + (e.clientY - startMouseY)}px`;
+        if (isMovingMap) {
+            mapaContainer.style.left = `${startMapLeft + (e.clientX - startMapX)}px`;
+            mapaContainer.style.top = `${startMapTop + (e.clientY - startMapY)}px`;
         }
-        if (isResizing) {
-            let newWidth = Math.max(300, startWidth + (e.clientX - startMouseX));
-            let newHeight = Math.max(300, startHeight + (e.clientY - startMouseY));
-            mapaContainer.style.width = `${newWidth}px`;
-            mapaContainer.style.height = `${newHeight}px`;
+        if (isResizingMap) {
+            let newW = Math.max(300, startMapW + (e.clientX - startMapX));
+            let newH = Math.max(300, startMapH + (e.clientY - startMapY));
+            mapaContainer.style.width = `${newW}px`;
+            mapaContainer.style.height = `${newH}px`;
         }
     });
-    window.addEventListener('mouseup', () => { isMoving = false; isResizing = false; mapaContainer.style.cursor = ''; });
-    resizeHandle.addEventListener('mousedown', (e) => {
-        isResizing = true;
-        startMouseX = e.clientX;
-        startMouseY = e.clientY;
-        startWidth = mapaContainer.offsetWidth;
-        startHeight = mapaContainer.offsetHeight;
+    window.addEventListener('mouseup', () => { isMovingMap = false; isResizingMap = false; });
+    resizeHandleMap.addEventListener('mousedown', (e) => {
+        isResizingMap = true;
+        startMapX = e.clientX;
+        startMapY = e.clientY;
+        startMapW = mapaContainer.offsetWidth;
+        startMapH = mapaContainer.offsetHeight;
         e.preventDefault();
     });
+    // táctil
     mapaHeader.addEventListener('touchstart', (e) => {
         if (e.target === mapaHeader || mapaHeader.contains(e.target)) {
-            isMoving = true;
-            const touch = e.touches[0];
-            startMouseX = touch.clientX;
-            startMouseY = touch.clientY;
-            startLeft = mapaContainer.offsetLeft;
-            startTop = mapaContainer.offsetTop;
+            isMovingMap = true;
+            const t = e.touches[0];
+            startMapX = t.clientX;
+            startMapY = t.clientY;
+            startMapLeft = mapaContainer.offsetLeft;
+            startMapTop = mapaContainer.offsetTop;
             e.preventDefault();
         }
     });
-    resizeHandle.addEventListener('touchstart', (e) => {
-        isResizing = true;
-        const touch = e.touches[0];
-        startMouseX = touch.clientX;
-        startMouseY = touch.clientY;
-        startWidth = mapaContainer.offsetWidth;
-        startHeight = mapaContainer.offsetHeight;
+    resizeHandleMap.addEventListener('touchstart', (e) => {
+        isResizingMap = true;
+        const t = e.touches[0];
+        startMapX = t.clientX;
+        startMapY = t.clientY;
+        startMapW = mapaContainer.offsetWidth;
+        startMapH = mapaContainer.offsetHeight;
         e.preventDefault();
     });
     window.addEventListener('touchmove', (e) => {
-        if (isMoving && e.touches[0]) {
-            let dx = e.touches[0].clientX - startMouseX;
-            let dy = e.touches[0].clientY - startMouseY;
-            mapaContainer.style.left = `${startLeft + dx}px`;
-            mapaContainer.style.top = `${startTop + dy}px`;
+        if (isMovingMap && e.touches[0]) {
+            let dx = e.touches[0].clientX - startMapX;
+            let dy = e.touches[0].clientY - startMapY;
+            mapaContainer.style.left = `${startMapLeft + dx}px`;
+            mapaContainer.style.top = `${startMapTop + dy}px`;
         }
-        if (isResizing && e.touches[0]) {
-            let dw = e.touches[0].clientX - startMouseX;
-            let dh = e.touches[0].clientY - startMouseY;
-            mapaContainer.style.width = `${Math.max(300, startWidth + dw)}px`;
-            mapaContainer.style.height = `${Math.max(300, startHeight + dh)}px`;
+        if (isResizingMap && e.touches[0]) {
+            let dw = e.touches[0].clientX - startMapX;
+            let dh = e.touches[0].clientY - startMapY;
+            mapaContainer.style.width = `${Math.max(300, startMapW + dw)}px`;
+            mapaContainer.style.height = `${Math.max(300, startMapH + dh)}px`;
         }
     });
-    window.addEventListener('touchend', () => { isMoving = false; isResizing = false; });
+    window.addEventListener('touchend', () => { isMovingMap = false; isResizingMap = false; });
     
-    // Control de apertura/cierre del mapa
+    // Apertura/cierre del mapa
     const overlay = document.getElementById('overlay');
     const openMapBtn = document.getElementById('openMapBtn');
     const cerrarMapaBtn = document.getElementById('cerrarMapaBtn');
-    
     function abrirMapa() {
         overlay.style.display = 'block';
         mapaContainer.style.display = 'flex';
@@ -1134,127 +1203,87 @@ El sistema operativo es una pieza de software de enorme complejidad y constante 
     openMapBtn.addEventListener('click', abrirMapa);
     cerrarMapaBtn.addEventListener('click', cerrarMapa);
     overlay.addEventListener('click', cerrarMapa);
-    
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            if (mapaContainer.style.display === 'flex') cerrarMapa();
-        }
-    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && mapaContainer.style.display === 'flex') cerrarMapa(); });
     
     document.getElementById('expandirTodoMapa').addEventListener('click', expandirTodoMapa);
     document.getElementById('colapsarTodoMapa').addEventListener('click', colapsarTodoMapa);
     
     // --------------------------------------------------------------
-    // NUEVAS FUNCIONES: DESCARGAR PPTX Y PDF
+    // EXPORTAR A PPTX Y PDF (captura con el zoom actual)
     // --------------------------------------------------------------
     const downloadPPTBtn = document.getElementById('downloadPPTBtn');
     const downloadPDFBtn = document.getElementById('downloadPDFBtn');
     
     async function capturarImagenActual() {
         const elemento = document.querySelector('.image-viewer');
-        if (!elemento) {
-            alert('No se pudo encontrar la diapositiva para exportar.');
-            return null;
-        }
+        if (!elemento) { alert('No se pudo encontrar la diapositiva.'); return null; }
         try {
             const canvas = await html2canvas(elemento, {
-                scale: 2,               // Alta calidad
+                scale: 2,
                 backgroundColor: '#000000',
                 useCORS: true,
                 logging: false
             });
             return canvas.toDataURL('image/png');
-        } catch (error) {
-            console.error('Error al capturar:', error);
-            alert('Error al capturar la imagen. Revisa la consola.');
+        } catch (err) {
+            console.error(err);
+            alert('Error al capturar la imagen.');
             return null;
         }
     }
     
-    // Descargar PowerPoint
     downloadPPTBtn.addEventListener('click', async () => {
         const btn = downloadPPTBtn;
-        const originalText = btn.textContent;
+        const original = btn.textContent;
         btn.textContent = '⏳ Generando PPTX...';
         btn.disabled = true;
-        
         const imgData = await capturarImagenActual();
-        if (!imgData) {
-            btn.textContent = originalText;
-            btn.disabled = false;
-            return;
+        if (imgData) {
+            try {
+                const PptxGenJS = window.PptxGenJS;
+                const pptx = new PptxGenJS();
+                const slide = pptx.addSlide();
+                const w = pptx.layout.WIDTH;
+                const h = pptx.layout.HEIGHT;
+                slide.addImage({ data: imgData, x: 0, y: 0, w: w, h: h });
+                await pptx.writeFile({ fileName: `diapositiva_${currentSlide}.pptx` });
+            } catch (err) { console.error(err); alert('Error al generar PPTX.'); }
         }
-        
-        try {
-            const PptxGenJS = window.PptxGenJS;
-            const pptx = new PptxGenJS();
-            const slide = pptx.addSlide();
-            const slideWidth = pptx.layout.WIDTH;
-            const slideHeight = pptx.layout.HEIGHT;
-            slide.addImage({
-                data: imgData,
-                x: 0,
-                y: 0,
-                w: slideWidth,
-                h: slideHeight
-            });
-            await pptx.writeFile({ fileName: `diapositiva_${currentSlide}.pptx` });
-        } catch (err) {
-            console.error(err);
-            alert('Error al generar PowerPoint.');
-        } finally {
-            btn.textContent = originalText;
-            btn.disabled = false;
-        }
+        btn.textContent = original;
+        btn.disabled = false;
     });
     
-    // Descargar PDF (con orientación automática)
     downloadPDFBtn.addEventListener('click', async () => {
         const btn = downloadPDFBtn;
-        const originalText = btn.textContent;
+        const original = btn.textContent;
         btn.textContent = '⏳ Generando PDF...';
         btn.disabled = true;
-        
         const imgData = await capturarImagenActual();
-        if (!imgData) {
-            btn.textContent = originalText;
-            btn.disabled = false;
-            return;
+        if (imgData) {
+            try {
+                const img = new Image();
+                img.src = imgData;
+                await new Promise(r => { img.onload = r; });
+                const { jsPDF } = window.jspdf;
+                const orientation = img.width > img.height ? 'landscape' : 'portrait';
+                const pdf = new jsPDF({ orientation, unit: 'px', format: [img.width, img.height] });
+                pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height, undefined, 'FAST');
+                pdf.save(`diapositiva_${currentSlide}.pdf`);
+            } catch (err) { console.error(err); alert('Error al generar PDF.'); }
         }
-        
-        try {
-            const img = new Image();
-            img.src = imgData;
-            await new Promise((resolve) => { img.onload = resolve; });
-            
-            const { jsPDF } = window.jspdf;
-            const orientation = img.width > img.height ? 'landscape' : 'portrait';
-            // Usamos unidades 'px' con el tamaño exacto de la imagen
-            const pdf = new jsPDF({
-                orientation: orientation,
-                unit: 'px',
-                format: [img.width, img.height]
-            });
-            pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height, undefined, 'FAST');
-            pdf.save(`diapositiva_${currentSlide}.pdf`);
-        } catch (err) {
-            console.error(err);
-            alert('Error al generar PDF.');
-        } finally {
-            btn.textContent = originalText;
-            btn.disabled = false;
-        }
+        btn.textContent = original;
+        btn.disabled = false;
     });
     
     // --------------------------------------------------------------
     // INICIALIZACIÓN
     // --------------------------------------------------------------
     updateSlideImage();
-    const { nodos, hijosMap, raices } = parsear(textoOriginal);
-    const nodosMap = new Map();
-    nodos.forEach(n => nodosMap.set(n.id, n));
-    window.currentRenderData = { raices, nodosMap, hijosMap };
-    renderizarMapa(raices, nodosMap, hijosMap);
+    const parsed = parsear(textoOriginal);
+    const nodosMapGlobal = new Map();
+    parsed.nodos.forEach(n => nodosMapGlobal.set(n.id, n));
+    window.currentRenderData = { raices: parsed.raices, nodosMap: nodosMapGlobal, hijosMap: parsed.hijosMap };
+    renderizarMapa(parsed.raices, nodosMapGlobal, parsed.hijosMap);
 </script>
 </body>
 </html>
